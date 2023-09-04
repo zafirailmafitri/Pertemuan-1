@@ -1,0 +1,509 @@
+---
+title: "Tugas MPDW P2"
+author: "Zafira Ilma Fitri"
+date: "2023-09-04"
+output: html_document
+---
+
+#### Memanggil library package yang dibutuhkan
+
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+```
+
+#### Mengimpor Data
+
+```{r}
+library(readxl)
+data <- read_excel("C:/Users/Zifferentpg/OneDrive/Documents/mpdw.xlsx")
+View(data)
+str(data)
+dim(data)
+```
+
+#### Mengubah data menjadi objek time series
+
+```{r}
+data.ts <- ts(data$value)
+summary(data.ts)
+```
+
+#### Membuat plot deret waktu
+
+```{r}
+ts.plot(data.ts, xlab="Time Period", ylab="Population", 
+        main = "Time Series Plot")
+points(data.ts)
+```
+
+#### Menyimpan Plot
+
+```{r}
+#menyimpan plot
+#dev.copy(png, "eksplorasi.png")
+#dev.off()
+```
+
+Pada grafik yang terlihat, diketahui pola data yang digunakan cenderung berpola tren. Pada data dengan pola tren, maka metode pemulusan yang cocok digunakan adalah rata-rata bergerak ganda (double moving average) dan pemulusan exponensial ganda (double exponential smoothing)
+
+#### Pembagian Data
+
+Pembagian data latih dan data uji dilakukan dengan perbandingan 80% data latih dan 20% data uji.
+
+```{r}
+#membagi data latih dan data uji
+training_ma <- data[1:96,]
+testing_ma <- data[97:120,]
+train_ma.ts <- ts(training_ma$value)
+test_ma.ts <- ts(testing_ma$value)
+```
+
+### Eksplorasi Data
+
+Eksplorasi data dilakukan pada data training dan data test menggunakan plot data deret waktu
+
+```{r}
+#eksplorasi keseluruhan data
+plot(data.ts, col="red",main="Plot semua data")
+points(data.ts)
+
+#eksplorasi data latih
+plot(train_ma.ts, col="blue",main="Plot data latih")
+points(train_ma.ts)
+
+#eksplorasi data uji
+plot(test_ma.ts, col="green",main="Plot data uji")
+points(test_ma.ts)
+```
+#### Melakukan eksplorasi data dengan menggunakan package ggplot
+
+```{r}
+#Eksplorasi dengan ggplot
+library(ggplot2)
+ggplot() + 
+  geom_line(data = training_ma, aes(x = date, y = value, col = "Data Training")) +
+  geom_line(data = testing_ma, aes(x = date, y = value, col = "Data Test")) +
+  labs(x = "Periode Waktu", y = "Populasi", color = "Legend") +
+  scale_colour_manual(name="Keterangan:", breaks = c("Data Training", "Data Test"),
+                      values = c("blue", "yellow")) + 
+  theme_bw() + theme(legend.position = "bottom",
+                     plot.caption = element_text(hjust=0.5, size=12))
+```
+## Single Moving Average (SMA) & Double Moving Average (DMA)
+
+### Single Moving Average (SMA)
+
+Pengujian menggunakan metode SMA dilakukan untuk melihat ketidakcocokan penggunaan metode ini pada data yang berpola tren. Karena, metode SMA cocok digunakan untuk data yang stasioner atau konstan.
+
+```{r}
+data.sma<-SMA(train_ma.ts, n=2)
+data.sma
+```
+Data pemulusan pada periode ke-t selanjutnya digunakan sebagai nilai peramalan pada periode ke t+1 sehingga hasil peramalan 1 periode kedepan adalah sebagai berikut.
+
+```{r}
+data.ramal<-c(NA,data.sma)
+data.ramal #forecast 1 periode ke depan
+```
+Selanjutnya akan dilakukan peramalan sejumlah data uji yaitu 24 periode. Pada metode SMA, hasil peramalan 24 periode ke depan akan bernilai sama dengan hasil peramalan 1 periode kedepan. Dalam hal ini akan dilakukan penggabungan data aktual train, data hasil pemulusan dan data hasil ramalan 24 periode kedepan.
+
+```{r}
+data.gab<-cbind(aktual=c(train_ma.ts,rep(NA,24)),pemulusan=c(data.sma,rep(NA,24)),ramalan=c(data.ramal,rep(data.ramal[length(data.ramal)],23)))
+data.gab #forecast 24 periode ke depan
+```
+Berikut merupakan plot data deret waktu dari peramalan.
+
+```{r}
+ts.plot(data.ts, xlab="Time Period ", ylab="Population", main= "SMA N=2 Population Value from the U.S. Census Bureau")
+points(data.ts)
+lines(data.gab[,2],col="red",lwd=2)
+lines(data.gab[,3],col="purple",lwd=2)
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=1:3, col=c("maroon","red","purple"), cex=0.5)
+```
+Selanjutnya perhitungan akurasi dilakukan dengan ukuran akurasi MSE dan MAPE. Perhitungan akurasi dilakukan pada data train dan data test.
+
+```{r}
+#Menghitung nilai keakuratan data latih
+error_train.sma = train_ma.ts-data.ramal[1:length(train_ma.ts)]
+SSE_train.sma = sum(error_train.sma[5:length(train_ma.ts)]^2)
+MSE_train.sma = mean(error_train.sma[5:length(train_ma.ts)]^2)
+MAPE_train.sma = mean(abs((error_train.sma[5:length(train_ma.ts)]/train_ma.ts[5:length(train_ma.ts)])*100))
+
+akurasi_train.sma <- matrix(c(SSE_train.sma, MSE_train.sma, MAPE_train.sma))
+row.names(akurasi_train.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.sma) <- c("Akurasi m = 4")
+akurasi_train.sma
+```
+Adapun nilai MAPE yang didapat dari penggunaan data train dengan metode pemulusan SMA adalah 8.75 > 5%. Nilai ini menunjukkan bahwa akurasi yang dilakukan kurang baik. Selanjutnya dilakukan perhitungan nilai MAPE data test dengan metode pemulusan SMA.
+
+```{r}
+#Menghitung nilai keakuratan data test
+error_test.sma = test_ma.ts-data.gab[97:120,3]
+SSE_test.sma = sum(error_test.sma^2)
+MSE_test.sma = mean(error_test.sma^2)
+MAPE_test.sma = mean(abs((error_test.sma/test_ma.ts*100)))
+
+akurasi_test.sma <- matrix(c(SSE_test.sma, MSE_test.sma, MAPE_test.sma))
+row.names(akurasi_test.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.sma) <- c("Akurasi m = 4")
+akurasi_test.sma
+```
+Terlihat bahwa nilai MAPE yang dihasilkan menggunakan data test dengan metode pemulusan SMA adalah 6.47 > 5 %. Nilai ini mendukung kesimpulan pada pengujian akurasi menggunakan data training yang menunjukkan bahwa akurasi yang dilakukan kurang baik.
+
+### Double Moving Average (DMA)
+
+```{r}
+dma <- SMA(data.sma, n = 2)
+At <- 2*data.sma - dma
+Bt <- (data.sma - dma)
+data.dma<- At+Bt
+data.ramal2<- c(NA, data.dma)
+
+t = 1:24
+f = c()
+
+for (i in t) {
+  f[i] = At[length(At)] + Bt[length(Bt)]*(i)
+}
+
+data.gab2 <- cbind(aktual = c(train_ma.ts,rep(NA,24)), pemulusan1 = c(data.sma,rep(NA,24)),pemulusan2 = c(data.dma, rep(NA,24)),At = c(At, rep(NA,24)), Bt = c(Bt,rep(NA,24)),ramalan = c(data.ramal2, f[-1]))
+data.gab2
+
+```
+Hasil pemulusan menggunakan metode DMA divisualisasikan sebagai berikut
+
+```{r}
+ts.plot(data.ts, xlab="Time Period ", ylab="Population", main= "DMA N=2 Population Value from the U.S. Census Bureau")
+points(data.ts)
+lines(data.gab2[,3],col="red",lwd=2)
+lines(data.gab2[,6],col="black",lwd=2)
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=8, col=c("pink","red","black"), cex=0.8)
+```
+Perhitungan akurasi dilakukan pada data training dan data test dengan MENGGUNAKAN ukuran akurasi SSE, MSE dan MAPE.
+
+```{r}
+#Menghitung nilai keakuratan data train
+error_train.dma = train_ma.ts-data.ramal2[1:length(train_ma.ts)]
+SSE_train.dma = sum(error_train.dma[8:length(train_ma.ts)]^2)
+MSE_train.dma = mean(error_train.dma[8:length(train_ma.ts)]^2)
+MAPE_train.dma = mean(abs((error_train.dma[8:length(train_ma.ts)]/train_ma.ts[8:length(train_ma.ts)])*100))
+
+akurasi_train.dma <- matrix(c(SSE_train.dma, MSE_train.dma, MAPE_train.dma))
+row.names(akurasi_train.dma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.dma) <- c("Akurasi m = 4")
+akurasi_train.dma
+```
+Adapun nilai MAPE data train dengan metode pemulusan DMA adalah 2.92 < 5%. Hal tersebut menunjukkan bahwa akurasi yang dihasilkan dangat baik.
+Selanjutnya dilakukan perhitungan nilai MAPE pada data test dengan metode pemulusan DMA.
+
+```{r}
+#Menghitung nilai keakuratan data test
+error_test.dma = test_ma.ts-data.gab2[97:120,6]
+SSE_test.dma = sum(error_test.dma^2)
+MSE_test.dma = mean(error_test.dma^2)
+MAPE_test.dma = mean(abs((error_test.dma/test_ma.ts*100)))
+
+akurasi_test.dma <- matrix(c(SSE_test.dma, MSE_test.dma, MAPE_test.dma))
+row.names(akurasi_test.dma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.dma) <- c("Akurasi n = 2")
+akurasi_test.dma
+```
+Nilai MAPE data test dengan metode pemulusan DMA adalah 3.03 < 5%. Hal ini turut mendukung hasil yang didaptkan dengan pengujian akurasi data training sebelumnya yan menunjukkan bahwa akurasi yang dihasilkan sangat baik.
+
+### Kesimpulan
+Dari kedua metode yang telah digunakan, terlihat bahwa metode pemulusan DMA (Double Moving Average) lebih cocok digunakan pada data ini yang berpola tren dibandingkan menggunakan metode pemulusan SMA (Single Moving Average).
+
+## Single Exponential Smoothing (SES) & Double Exponential Smoothing (DES)
+
+### Single Exponential Smoothing (SES)
+
+Penggunaan metode SES pada data ini adalah untuk menunjukkan bahwa metode ini kurang tepat jika digunakan untuk data berpola tren.
+
+```{r}
+#membagi training dan testing (80% & 20%)
+training<-data[1:96,]
+testing<-data[97:120,]
+train.ts <- ts(training$value)
+test.ts <- ts(testing$value)
+```
+
+```{r}
+#Cara 1 (fungsi ses)
+ses.1 <- ses(train.ts, h = 24, alpha = 0.2)
+plot(ses.1)
+ses.1
+
+ses.2<- ses(train.ts, h = 24, alpha = 0.8)
+plot(ses.2)
+ses.2
+```
+Untuk mendapatkan gambar hasil pemulusan pada data training dengan fungsi `ses()` , perlu digunakan fungsi `autoplot()` dan `autolayer()` dari *library packages* `ggplot2` .
+
+```{r}
+autoplot(ses.1) +
+  autolayer(fitted(ses.1), series="Fitted") +
+  ylab("Populasi") + xlab("Periode")
+```
+Selanjutnya akan digunakan fungsi `HoltWinters()` dengan nilai inisialisasi parameter dan panjang periode peramalan yang sama dengan fungsi `ses()` .
+
+```{r}
+#Cara 2 (fungsi Holtwinter)
+ses1<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE, alpha = 0.2)
+plot(ses1)
+
+#ramalan
+ramalan1<- forecast(ses1, h=24)
+ramalan1
+
+ses2<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE, alpha = 0.8)
+plot(ses2)
+
+#ramalan
+ramalan2<- forecast(ses2, h=24)
+ramalan2
+```
+Fungsi `HoltWinters` memiliki argumen yang sama dengan fungsi `ses()` . Argumen-argumen kedua fungsi dapat dilihat lebih lanjut dengan `?ses()` atau `?HoltWinters` .
+
+Nilai parameter $\alpha$ dari kedua fungsi dapat dioptimalkan menyesuaikan dari *error*-nya paling minimumnya. Caranya adalah dengan membuat parameter $\alpha =$ `NULL` .
+
+```{r}
+#SES
+ses.opt <- ses(train.ts, h = 24, alpha = NULL)
+plot(ses.opt)
+ses.opt
+
+#Lamda Optimum Holt Winter
+sesopt<- HoltWinters(train.ts, gamma = FALSE, beta = FALSE,alpha = NULL)
+sesopt
+plot(sesopt)
+
+#ramalan
+ramalanopt<- forecast(sesopt, h=24)
+ramalanopt
+```
+Selanjutnya, dilakukan perhitungan akurasi pada data training dan data test.
+
+#### Akurasi Data Latih
+
+```{r}
+#Keakuratan Metode
+#Pada data training
+SSE1<-ses1$SSE
+MSE1<-ses1$SSE/length(train.ts)
+RMSE1<-sqrt(MSE1)
+
+akurasi1 <- matrix(c(SSE1,MSE1,RMSE1))
+row.names(akurasi1)<- c("SSE", "MSE", "RMSE")
+colnames(akurasi1) <- c("Akurasi lamda=0.2")
+akurasi1
+
+SSE2<-ses2$SSE
+MSE2<-ses2$SSE/length(train.ts)
+RMSE2<-sqrt(MSE2)
+
+akurasi2 <- matrix(c(SSE2,MSE2,RMSE2))
+row.names(akurasi2)<- c("SSE", "MSE", "RMSE")
+colnames(akurasi2) <- c("Akurasi lamda=0.8")
+akurasi2
+
+#Cara Manual
+fitted1<-ramalan1$fitted
+sisaan1<-ramalan1$residuals
+head(sisaan1)
+
+resid1<-training$value-ramalan1$fitted
+head(resid1)
+```
+Menghitung MAPE dengan cara manual
+
+```{r}
+SSE.1=sum(sisaan1[2:length(train.ts)]^2)
+SSE.1
+
+MSE.1 = SSE.1/length(train.ts)
+MSE.1
+
+MAPE.1 = sum(abs(sisaan1[2:length(train.ts)]/train.ts[2:length(train.ts)])*
+               100)/length(train.ts)
+MAPE.1
+
+akurasi.1 <- matrix(c(SSE.1,MSE.1,MAPE.1))
+row.names(akurasi.1)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi.1) <- c("Akurasi lamda=0.2")
+akurasi.1
+
+fitted2<-ramalan2$fitted
+sisaan2<-ramalan2$residuals
+head(sisaan2)
+
+resid2<-training$value-ramalan2$fitted
+head(resid2)
+
+SSE.2=sum(sisaan2[2:length(train.ts)]^2)
+SSE.2
+
+MSE.2 = SSE.2/length(train.ts)
+MSE.2
+
+MAPE.2 = sum(abs(sisaan2[2:length(train.ts)]/train.ts[2:length(train.ts)])*
+               100)/length(train.ts)
+MAPE.2
+
+akurasi.2 <- matrix(c(SSE.2,MSE.2,MAPE.2))
+row.names(akurasi.2)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi.2) <- c("Akurasi lamda=0.8")
+akurasi.2
+```
+Berdasarkan nilai SSE, MSE, RMSE, dan MAPE di antara kedua parameter, nilai parameter $\lambda=0.8$ menghasilkan akurasi yang lebih baik dibanding $\lambda=0.2$ . Dari nilai MAPE yang dihasilkan, terlihat bahwa peramalan sangat baik karena kedua MAPE yang dihasilkan < 10%.
+
+#### Akurasi Data Test
+
+Akurasi data test dapat dihitung dengan cara yang hampir sama dengan perhitungan akurasi data training.
+
+```{r}
+pengurangan1<-ramalan1$mean-testing$value
+SSEtesting1<-sum(pengurangan1^2)
+MSEtesting1<-SSEtesting1/length(testing)
+
+pengurangan2<-ramalan2$mean-testing$value
+SSEtesting2<-sum(pengurangan2^2)
+MSEtesting2<-SSEtesting2/length(testing)
+
+penguranganopt<-ramalanopt$mean-testing$value
+SSEtestingopt<-sum(penguranganopt^2)
+MSEtestingopt<-SSEtestingopt/length(testing)
+
+akurasitesting1 <- matrix(c(SSEtesting1,SSEtesting2,SSEtestingopt))
+row.names(akurasitesting1)<- c("SSE1", "SSE2", "SSEopt")
+akurasitesting1
+
+akurasitesting2 <- matrix(c(MSEtesting1,MSEtesting2,MSEtestingopt))
+row.names(akurasitesting2)<- c("MSE1", "MSE2", "MSEopt")
+akurasitesting2
+```
+## Double Exponential Smoothing (DES)
+
+```{r}
+#Lamda=0.2 dan gamma=0.2
+des.1<- HoltWinters(train.ts, gamma = FALSE, beta = 0.2, alpha = 0.2)
+plot(des.1)
+
+#ramalan
+ramalandes1<- forecast(des.1, h=24)
+ramalandes1
+
+#Lamda=0.6 dan gamma=0.3
+des.2<- HoltWinters(train.ts, gamma = FALSE, beta = 0.2, alpha = 0.7)
+plot(des.2)
+
+#ramalan
+ramalandes2<- forecast(des.2, h=24)
+ramalandes2
+```
+Selanjutnya membandingkan plot data training dan data test.
+
+```{r}
+#Mengevaluasi prediksi secara visual
+plot(data.ts)
+lines(des.1$fitted[,1], lty=2, col="blue")
+lines(ramalandes1$mean, col="red")
+```
+Untuk mendapatkan nilai parameter optimum dari DES, argumen `alpha` dan `beta` dapat dibuat `NULL` seperti berikut.
+
+```{r}
+#Lamda dan gamma optimum
+des.opt<- HoltWinters(train.ts, gamma = FALSE)
+des.opt
+plot(des.opt)
+
+#ramalan
+ramalandesopt<- forecast(des.opt, h=24)
+ramalandesopt
+```
+Selanjutnya akan dilakukan perhitungan akurasi pada data training maupun data test dengan ukuran akurasi SSE, MSE dan MAPE.
+
+#### Akurasi Data Training
+
+```{r}
+#Akurasi Data Training
+ssedes.train1<-des.1$SSE
+msedes.train1<-ssedes.train1/length(train.ts)
+sisaandes1<-ramalandes1$residuals
+head(sisaandes1)
+
+mapedes.train1 <- sum(abs(sisaandes1[3:length(train.ts)]/train.ts[3:length(train.ts)])
+                      *100)/length(train.ts)
+
+akurasides.1 <- matrix(c(ssedes.train1,msedes.train1,mapedes.train1))
+row.names(akurasides.1)<- c("SSE", "MSE", "MAPE")
+colnames(akurasides.1) <- c("Akurasi lamda=0.2 dan gamma=0.2")
+akurasides.1
+
+ssedes.train2<-des.2$SSE
+msedes.train2<-ssedes.train2/length(train.ts)
+sisaandes2<-ramalandes2$residuals
+head(sisaandes2)
+
+mapedes.train2 <- sum(abs(sisaandes2[3:length(train.ts)]/train.ts[3:length(train.ts)])
+                      *100)/length(train.ts)
+
+akurasides.2 <- matrix(c(ssedes.train2,msedes.train2,mapedes.train2))
+row.names(akurasides.2)<- c("SSE", "MSE", "MAPE")
+colnames(akurasides.2) <- c("Akurasi lamda=0.7 dan gamma=0.2")
+akurasides.2
+```
+
+Hasil akurasi dari data latih didapatkan skenario 2 dengan lamda=0.7 dan gamma=0.2 memiliki hasil yang lebih baik. Namun untuk kedua skenario dapat dikategorikan peramalan sangat baik berdasarkan nilai MAPE-nya.
+
+#### Akurasi Data Uji
+
+```{r}
+#Akurasi Data Testing
+selisihdes1<-ramalandes1$mean-testing$value
+selisihdes1
+
+SSEtestingdes1<-sum(selisihdes1^2)
+MSEtestingdes1<-SSEtestingdes1/length(testing$value)
+MAPEtestingdes1<-sum(abs(selisihdes1/testing$value)*100)/length(testing$value)
+
+selisihdes2<-ramalandes2$mean-testing$value
+selisihdes2
+
+SSEtestingdes2<-sum(selisihdes2^2)
+MSEtestingdes2<-SSEtestingdes2/length(testing$rate)
+MAPEtestingdes2<-sum(abs(selisihdes2/testing$value)*100)/length(testing$value)
+
+selisihdesopt<-ramalandesopt$mean-testing$value
+selisihdesopt
+
+SSEtestingdesopt<-sum(selisihdesopt^2)
+MSEtestingdesopt<-SSEtestingdesopt/length(testing$value)
+MAPEtestingdesopt<-sum(abs(selisihdesopt/testing$value)*100)/length(testing$value)
+
+akurasitestingdes <-
+  matrix(c(SSEtestingdes1,MSEtestingdes1,MAPEtestingdes1,SSEtestingdes2,MSEtestingdes2,
+           MAPEtestingdes2,SSEtestingdesopt,MSEtestingdesopt,MAPEtestingdesopt),
+         nrow=3,ncol=3)
+row.names(akurasitestingdes)<- c("SSE", "MSE", "MAPE")
+colnames(akurasitestingdes) <- c("des ske1","des ske2","des opt")
+akurasitestingdes
+```
+
+#### Perbandingan SES dan DES
+
+```{r}
+MSEfull <-
+  matrix(c(MSEtesting1,MSEtesting2,MSEtestingopt,MSEtestingdes1,MSEtestingdes2,
+           MSEtestingdesopt),nrow=3,ncol=2)
+row.names(MSEfull)<- c("ske 1", "ske 2", "ske opt")
+colnames(MSEfull) <- c("ses","des")
+MSEfull
+```
+
+### Kesimpulan
+Dari kedua uji exponential smoothing yang dilakukan, terlihat bahwa metode double exponential smoothing lebih baik digunakan pada data ini yang berpola tren dibandingkan menggunakan metode single exponential smoothing. 
+Berdasarkan hasil yang didapatkan dapat dilihat bahwa metode DES lebih baik digunakan dibandingkan dengan SES pada data yang berpola trend \`\`\`
+
